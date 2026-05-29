@@ -1,7 +1,10 @@
 streamlit
 google-generativeai
-weasyprint
 pandas
+PyPDF2
+PyMuPDF
+Pillow
+XlsxWriter
 openpyxl
 python-docx
-pymupdf
+weasyprint
