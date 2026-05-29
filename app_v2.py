@@ -32,7 +32,7 @@ st.markdown("""
 # ==========================================
 # 2. 頁面清單定義 (精準對齊您的實體檔名)
 # ==========================================
-pg_home = st.Page("app_V2.py", title="🏠 數位轉型戰情室", default=True)
+pg_home = st.Page("app_v2.py", title="🏠 數位轉型戰情室", default=True)
 
 # 核心工具組
 pg1 = st.Page("pages/1_Word圖片提取.py", title="📄 Word 圖片提取", icon="📝")
