@@ -1,0 +1,7 @@
+streamlit
+google-generativeai
+weasyprint
+pandas
+openpyxl
+python-docx
+pymupdf
