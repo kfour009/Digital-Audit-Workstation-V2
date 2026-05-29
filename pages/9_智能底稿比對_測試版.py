@@ -8,6 +8,7 @@ import io
 import os
 import glob
 import tempfile
+from PIL import Image, ImageDraw
 
 # 嘗試載入 PyMuPDF (fitz) 用於 PDF 渲染
 try:
@@ -129,7 +130,6 @@ selected_project = st.selectbox("請選擇要執行查核的專案：", ["-- 請
 
 if selected_project != "-- 請選擇 --":
     if st.button("📥 載入此專案底稿"):
-        # 載入新專案時，清空舊的佐證資料庫，強迫使用者對齊當前專案狀態
         st.session_state['evidence_dict'] = {}
         st.session_state['processed_meta'] = []
         
@@ -215,7 +215,6 @@ if uploaded_evidence:
             st.session_state['processed_meta'] = current_files_meta
             st.success(f"✅ 成功載入並解析 {len(uploaded_evidence)} 份佐證資料！")
 else:
-    # 這裡保留 session state，以利使用者切換專案時狀態清空後不再重建幽靈檔案
     if 'evidence_dict' not in st.session_state:
         st.session_state['evidence_dict'] = {}
     st.session_state['processed_meta'] = []
@@ -257,7 +256,7 @@ for index, row in active_df.iterrows():
 st.session_state['mapping_results'] = mapping_results
 
 # ==========================================
-# 🕵️ 第四步：啟動 AI 智能比對 (三階段漏斗防呆版)
+# 🕵️ 第四步：啟動 AI 智能比對 (強制寫入進化版)
 # ==========================================
 st.markdown("### 🕵️ 第四步：AI 視覺自動比對與產出 Findings")
 
@@ -281,21 +280,20 @@ if st.button("🚀 啟動多模態智能比對 (生成 Fieldwork 底稿)", use_c
         r_no = str(row['No'])
         wp_code = row.get('W/P', f"No.{r_no}")
         raw_mapped_filenames = mapping_results.get(r_no, [])
-        
-        # 💡 終極防護：過濾掉歷史幽靈配對檔案，確保檔案真的存在於現在的素材庫中
         mapped_filenames = [f for f in raw_mapped_filenames if f in st.session_state.get('evidence_dict', {})]
         
         current_step += 1
         status_text.markdown(f"🔍 **首席稽核機器人比對中 ({current_step}/{total_steps})**：正在解析底稿索引 `[{wp_code}]`...")
         progress_bar.progress(current_step / total_steps)
         
+        # 💡 終極防護：改用 .loc[index, ...] 以資料表的「絕對座標」強制覆寫，徹底解決型別跑版寫入失敗的問題！
         if not mapped_filenames:
-            master_df.loc[master_df['No'] == int(r_no), '有效控制'] = "未檢測"
-            master_df.loc[master_df['No'] == int(r_no), 'Findings'] = "【結論】：受查單位未提供相關佐證資料（或尚未上傳配對），無法執行比對。\n【發現事實】：無。\n【違反之管理辦法條文】：無。\n【可能造成的風險影響】：無。"
+            master_df.loc[index, '有效控制'] = "未檢測"
+            master_df.loc[index, 'Findings'] = "【結論】：受查單位未提供相關佐證資料（或尚未上傳配對），無法執行比對。\n【發現事實】：無。\n【違反之管理辦法條文】：無。\n【可能造成的風險影響】：無。"
             continue
             
-        master_df.loc[master_df['No'] == int(r_no), '有效控制'] = "⚠️ 異常"
-        master_df.loc[master_df['No'] == int(r_no), 'Findings'] = "系統比對過程發生錯誤或中斷。"
+        master_df.loc[index, '有效控制'] = "⚠️ 異常"
+        master_df.loc[index, 'Findings'] = "系統比對過程發生錯誤或中斷。"
         
         content_payload = []
         
@@ -336,7 +334,6 @@ if st.button("🚀 啟動多模態智能比對 (生成 Fieldwork 底稿)", use_c
         
         content_payload.append(compare_prompt_text)
         
-        # 這裡現在非常安全，因為 mapped_filenames 已經過濾過了
         for fname in mapped_filenames:
             ev_obj = st.session_state['evidence_dict'][fname]
             if ev_obj['type'] == 'vision_file':
@@ -358,13 +355,14 @@ if st.button("🚀 啟動多模態智能比對 (生成 Fieldwork 底稿)", use_c
                 f"--- 📎 參照附件：{', '.join(mapped_filenames)} ---"
             )
             
-            master_df.loc[master_df['No'] == int(r_no), '有效控制'] = res_data.get('有效控制', '異常')
-            master_df.loc[master_df['No'] == int(r_no), 'Findings'] = final_findings_str
-            
+            # 強制寫入絕對座標，絕不跑版
+            master_df.loc[index, '有效控制'] = res_data.get('有效控制', '異常')
+            master_df.loc[index, 'Findings'] = final_findings_str
             page_results[r_no] = max(1, int(res_data.get('異常頁數', 1)))
             
         except Exception as e:
-            master_df.loc[master_df['No'] == int(r_no), 'Findings'] = f"系統比對過程發生錯誤或中斷。(錯誤細節: {str(e)})"
+            # 萬一遇到 API 異常，現在錯誤訊息也能精準寫進表格中，不會再被吃掉了！
+            master_df.loc[index, 'Findings'] = f"系統比對過程發生錯誤。(錯誤細節: {str(e)})"
             continue
             
     status_text.markdown("✅ **比對任務全數完成！**")
@@ -449,7 +447,6 @@ if 'fw_df' in st.session_state:
 
         with col_viewer:
             raw_mapped_files = st.session_state.get('mapping_results', {}).get(selected_no, [])
-            # 同樣在顯示預覽時，過濾掉不存在的幽靈檔案
             mapped_files = [f for f in raw_mapped_files if f in st.session_state.get('evidence_dict', {})]
             
             if not mapped_files:
